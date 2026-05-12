@@ -26,10 +26,18 @@ SLOT_DURATION = timedelta(minutes=30)
 
 
 def _get_service():
-    credentials_path = os.path.join(BASE_DIR, settings.google_credentials_json)
-    creds = service_account.Credentials.from_service_account_file(
-        credentials_path, scopes=SCOPES
-    )
+    import json
+    credentials_content = os.environ.get("GOOGLE_CREDENTIALS_CONTENT")
+    if credentials_content:
+        # Railway: credenciales desde variable de entorno
+        info = json.loads(credentials_content)
+        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    else:
+        # Local: credenciales desde archivo
+        credentials_path = os.path.join(BASE_DIR, settings.google_credentials_json)
+        creds = service_account.Credentials.from_service_account_file(
+            credentials_path, scopes=SCOPES
+        )
     return build("calendar", "v3", credentials=creds)
 
 
