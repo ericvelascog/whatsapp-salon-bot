@@ -15,9 +15,13 @@ TOOLS = [
                 "date": {
                     "type": "string",
                     "description": "Fecha en formato YYYY-MM-DD",
-                }
+                },
+                "service_type": {
+                    "type": "string",
+                    "description": "Tipo de servicio: 'Corte Básico', 'Corte y Cejas' o 'Corte y Barba'",
+                },
             },
-            "required": ["date"],
+            "required": ["date", "service_type"],
         },
     },
     {
@@ -75,7 +79,9 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     try:
         if tool_name == "check_availability":
             target = date.fromisoformat(tool_input["date"])
-            slots = calendar_service.get_free_slots(target)
+            service_type = tool_input.get("service_type", "Corte Básico").lower().strip()
+            duration = 45 if "barba" in service_type else 30
+            slots = calendar_service.get_free_slots(target, duration)
             if not slots:
                 return f"No hay disponibilidad el {target.strftime('%A %d/%m/%Y')} (día cerrado o sin huecos libres)."
             return f"Horas disponibles el {target.strftime('%A %d/%m/%Y')}: {', '.join(slots)}"
@@ -83,7 +89,11 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
         elif tool_name == "create_appointment":
             target_date = date.fromisoformat(tool_input["date"])
             start_time = time.fromisoformat(tool_input["time"])
-            duration = tool_input.get("duration_minutes", 60)
+            if "duration_minutes" in tool_input:
+                duration = tool_input["duration_minutes"]
+            else:
+                service_lower = tool_input.get("service", "").lower().strip()
+                duration = 45 if "barba" in service_lower else 30
             event = calendar_service.create_appointment(
                 client_name=tool_input["client_name"],
                 client_phone=tool_input["client_phone"],
