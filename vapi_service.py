@@ -4,22 +4,13 @@ import calendar_service
 
 TIMEZONE = ZoneInfo("Europe/Madrid")
 
-SERVICE_DURATIONS = {
-    "corte básico": 30,
-    "corte basico": 30,
-    "corte y cejas": 30,
-    "corte y barba": 45,
-}
+APPOINTMENT_DURATION = 30
 
 
 def _parse_vapi_datetime(dt_str: str) -> tuple[date, time]:
     """Parsea 'YYYY/MM/DD HH:MM' de VAPI a date y time."""
     dt = datetime.strptime(dt_str.strip(), "%Y/%m/%d %H:%M")
     return dt.date(), dt.time()
-
-
-def _get_duration(service_type: str) -> int:
-    return SERVICE_DURATIONS.get(service_type.lower().strip(), 30)
 
 
 def handle_check_availability(args: dict) -> str:
@@ -30,10 +21,8 @@ def handle_check_availability(args: dict) -> str:
     try:
         preferred_dt = args.get("preferredDateTime", "")
         target_date, req_time = _parse_vapi_datetime(preferred_dt)
-        service_type = args.get("serviceType", "Corte básico")
-        duration = _get_duration(service_type)
 
-        free_slots = calendar_service.get_free_slots(target_date, duration)
+        free_slots = calendar_service.get_free_slots(target_date, APPOINTMENT_DURATION)
 
         if not free_slots:
             day_name = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][target_date.weekday()]
@@ -54,25 +43,23 @@ def handle_book_appointment(args: dict) -> str:
     try:
         name = args.get("name", "").strip()
         phone = args.get("phone", "").strip()
-        service_type = args.get("serviceType", "Corte básico").strip()
         preferred_dt = args.get("preferredDateTime", "")
 
         target_date, start_time = _parse_vapi_datetime(preferred_dt)
-        duration = _get_duration(service_type)
 
         event = calendar_service.create_appointment(
             client_name=name,
             client_phone=phone,
-            service=service_type,
+            service="Cita",
             target_date=target_date,
             start_time=start_time,
-            duration_minutes=duration,
+            duration_minutes=APPOINTMENT_DURATION,
         )
 
         dt = datetime.fromisoformat(event["start"]).astimezone(TIMEZONE)
         return (
             f"Cita confirmada. "
-            f"{service_type} para {name} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
+            f"Cita para {name} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
             f"Teléfono registrado: {phone}."
         )
 
