@@ -1,10 +1,9 @@
 from datetime import datetime, date, time
 from zoneinfo import ZoneInfo
 import calendar_service
+from business_config import APPOINTMENT_DURATION_MIN as APPOINTMENT_DURATION
 
 TIMEZONE = ZoneInfo("Europe/Madrid")
-
-APPOINTMENT_DURATION = 30
 
 
 def _parse_vapi_datetime(dt_str: str) -> tuple[date, time]:

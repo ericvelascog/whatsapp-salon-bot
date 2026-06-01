@@ -2,44 +2,63 @@ import anthropic
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from config import settings
+from business_config import CONFIG, IS_DEMO
 from knowledge_base import get_business_info_text
 from tools import TOOLS, dispatch_tool
 import session_store
 
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-_SYSTEM_PROMPT_TEMPLATE = """Eres el asistente virtual de un salón de peluquería y estética. \
-Tu nombre es Bella y eres amable, profesional y concisa.
+_BASE_TEMPLATE = """Eres el asistente virtual de {negocio}. \
+Tu nombre es {asistente} y eres {tono}.
 
 Tus funciones son:
 1. Gestionar reservas de citas: consultar disponibilidad, crear citas y cancelarlas.
-2. Responder preguntas sobre el salón: horarios, ubicación y políticas.
+2. Responder preguntas sobre el negocio: horarios, ubicación, servicios y políticas.
 
 REGLAS IMPORTANTES:
 - Para crear una cita siempre necesitas: nombre completo del cliente, fecha y hora.
 - Antes de crear una cita, consulta siempre la disponibilidad para esa fecha.
 - Antes de cancelar una cita, muéstrale al cliente la cita encontrada y pide confirmación explícita.
-- Si el cliente pide un día en que el salón está cerrado, indícaselo amablemente.
+- Si el cliente pide un día en que el negocio está cerrado, indícaselo amablemente.
 - Responde siempre en español, de forma breve y clara.
 - Usa la fecha de hoy como referencia cuando el cliente diga "mañana", "el viernes", etc.
 - La fecha y hora actual es: {now}
+"""
 
+# Bloque que SOLO se añade cuando el bot está en modo demostración (demo: true).
+_DEMO_BLOCK = """
 CONTEXTO IMPORTANTE — ESTE ES UN ASISTENTE DE DEMOSTRACIÓN:
-Eres una demostración creada por Eric para enseñar a negocios cómo funciona un sistema de reservas automático. Algunas personas que hablan contigo son dueños de negocios evaluando el producto. Sigue estas reglas:
+Eres una demostración creada por {comercial} para enseñar a negocios cómo funciona un sistema de reservas automático. Algunas personas que hablan contigo son dueños de negocios evaluando el producto. Sigue estas reglas:
 
 - Si te preguntan por los TIPOS DE SERVICIO o los PRECIOS de los cortes: explica con naturalidad que, al ser una demo, no se han configurado servicios concretos para ir al grano, pero que el sistema real permite definir cada servicio con su propia duración y precio, adaptándose a cómo trabaje cada negocio.
 
-- Si te preguntan sobre el PRODUCTO en sí (cuánto cuesta tener un asistente como tú, cómo conseguir uno, quién te ha creado, si pueden tenerlo para su negocio): explica brevemente que eres una demostración creada por Eric. Da una estimación orientativa: hay un plan solo de WhatsApp (alta única desde unos 149€ y unos 39€/mes) y un plan completo que además incluye asistente de voz por teléfono (alta desde unos 259€ y unos 79€/mes). Ambos incluyen mantenimiento, cambios de precios y servicios, y ayuda con la adopción inicial. Aclara SIEMPRE que los precios son orientativos y dependen del volumen del negocio, y que lo mejor es que lo hablen directamente con Eric escribiéndole al 626 82 34 35.
+- Si te preguntan sobre el PRODUCTO en sí (cuánto cuesta tener un asistente como tú, cómo conseguir uno, quién te ha creado, si pueden tenerlo para su negocio): explica brevemente que eres una demostración creada por {comercial}. Da una estimación orientativa: hay un plan solo de WhatsApp (alta única desde unos 149€ y unos 39€/mes) y un plan completo que además incluye asistente de voz por teléfono (alta desde unos 259€ y unos 79€/mes). Ambos incluyen mantenimiento, cambios de precios y servicios, y ayuda con la adopción inicial. Aclara SIEMPRE que los precios son orientativos y dependen del volumen del negocio, y que lo mejor es que lo hablen directamente con {comercial} escribiéndole al {tel_comercial}.
 
-- IMPORTANTE: después de confirmar una reserva con éxito, añade SIEMPRE al final de tu mensaje, en una línea aparte y entre paréntesis: "(¿Te ha gustado cómo funciona este asistente? Escríbele a Eric al 626 82 34 35 👍)"
-
-{business_info}
+- IMPORTANTE: después de confirmar una reserva con éxito, añade SIEMPRE al final de tu mensaje, en una línea aparte y entre paréntesis: "(¿Te ha gustado cómo funciona este asistente? Escríbele a {comercial} al {tel_comercial} 👍)"
 """
 
 
 def _build_system_prompt() -> str:
     now = datetime.now(ZoneInfo("Europe/Madrid")).strftime("%A %d/%m/%Y %H:%M")
-    return _SYSTEM_PROMPT_TEMPLATE.format(now=now, business_info=get_business_info_text())
+    asistente = CONFIG.get("asistente", {}) or {}
+
+    prompt = _BASE_TEMPLATE.format(
+        negocio=CONFIG.get("nombre", "un negocio"),
+        asistente=asistente.get("nombre", "el asistente"),
+        tono=asistente.get("tono", "amable y profesional"),
+        now=now,
+    )
+
+    if IS_DEMO:
+        comercial = CONFIG.get("contacto_comercial", {}) or {}
+        prompt += _DEMO_BLOCK.format(
+            comercial=comercial.get("nombre", "el creador"),
+            tel_comercial=comercial.get("telefono", ""),
+        )
+
+    prompt += "\n\n" + get_business_info_text() + "\n"
+    return prompt
 
 
 def process_message(phone: str, user_text: str) -> str:

@@ -1,5 +1,6 @@
 from datetime import date, time, datetime
 import calendar_service
+from business_config import APPOINTMENT_DURATION_MIN
 
 # Schemas de tools para Claude
 TOOLS = [
@@ -70,7 +71,7 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     try:
         if tool_name == "check_availability":
             target = date.fromisoformat(tool_input["date"])
-            slots = calendar_service.get_free_slots(target, 30)
+            slots = calendar_service.get_free_slots(target, APPOINTMENT_DURATION_MIN)
             if not slots:
                 return f"No hay disponibilidad el {target.strftime('%A %d/%m/%Y')} (día cerrado o sin huecos libres)."
             return f"Horas disponibles el {target.strftime('%A %d/%m/%Y')}: {', '.join(slots)}"
@@ -84,7 +85,7 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
                 service="Cita",
                 target_date=target_date,
                 start_time=start_time,
-                duration_minutes=30,
+                duration_minutes=APPOINTMENT_DURATION_MIN,
             )
             dt = datetime.fromisoformat(event["start"])
             return (

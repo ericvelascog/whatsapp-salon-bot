@@ -1,0 +1,37 @@
+{
+  "_nota": "PLANTILLA para un cliente REAL. Copia este contenido, rellénalo con los datos del cliente y pégalo en la variable de entorno BUSINESS_CONFIG de su despliegue en Railway. NO lo subas a Git con datos reales.",
+  "nombre": "Nombre del Negocio",
+  "descripcion": "Breve descripción del negocio y su estilo.",
+  "telefono": "+34 600 00 00 00",
+  "direccion": "Calle Ejemplo 1, Ciudad",
+  "como_llegar": "Indicaciones o referencia para llegar.",
+  "horario": {
+    "lunes": "10:00 - 14:00",
+    "martes": "10:00 - 20:00",
+    "miercoles": "10:00 - 20:00",
+    "jueves": "10:00 - 20:00",
+    "viernes": "10:00 - 20:00",
+    "sabado": "10:00 - 14:00",
+    "domingo": "Cerrado"
+  },
+  "servicios": [
+    { "nombre": "Corte", "precio": "12,00€", "duracion_min": 30, "descripcion": "Corte de cabello a máquina o tijera." },
+    { "nombre": "Corte y Barba", "precio": "20,00€", "duracion_min": 45, "descripcion": "Corte de cabello y arreglo de barba." }
+  ],
+  "politicas": {
+    "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación.",
+    "retraso": "Si llegas con más de 15 minutos de retraso, puede que debamos reprogramar tu cita.",
+    "pago": "Aceptamos efectivo y tarjeta.",
+    "reservas": "Las citas se reservan por WhatsApp."
+  },
+  "asistente": {
+    "nombre": "Leo",
+    "tono": "cercano, profesional y conciso"
+  },
+  "duracion_cita_min": 30,
+  "demo": false,
+  "contacto_comercial": {
+    "nombre": "Eric",
+    "telefono": "626 82 34 35"
+  }
+}

@@ -1,45 +1,41 @@
-# Edita este archivo con la información real del negocio
+# La información del negocio ya NO está aquí: vive en business_config.py
+# (variable de entorno BUSINESS_CONFIG o archivo business_config.json).
+from business_config import CONFIG
 
-BUSINESS_INFO = {
-    "nombre": "Barbería de Prueba",
-    "descripcion": "Barbería de barrio para hombres, abierta a todo tipo de públicos. Cortes clásicos y modernos en un ambiente cercano y sin pretensiones.",
-    "telefono": "+34 (931) 20 85 91",
-    "direccion": "Carrer del Mar 8, Badalona",
-    "como_llegar": "Consulta Google Maps para la ruta más conveniente.",
-    "horario": {
-        "lunes": "14:00 - 20:00",
-        "martes": "14:00 - 20:00",
-        "miércoles": "14:00 - 20:00",
-        "jueves": "14:00 - 20:00",
-        "viernes": "14:00 - 20:00",
-        "sábado": "Cerrado",
-        "domingo": "Cerrado",
-    },
-    "politicas": {
-        "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación.",
-        "retraso": "Si llegas con más de 15 minutos de retraso, puede que no podamos atenderte y debamos reprogramar tu cita.",
-        "pago": "Aceptamos efectivo y tarjeta de crédito/débito.",
-        "reservas": "Las citas se reservan por WhatsApp. Para hablar con nuestro asistente de voz llama al +34 (931) 20 85 91.",
-    },
-}
+# Alias de compatibilidad por si algún módulo todavía lo importa.
+BUSINESS_INFO = CONFIG
 
 
 def get_business_info_text() -> str:
     """Devuelve toda la info del negocio como texto estructurado para el system prompt."""
-    b = BUSINESS_INFO
-    horario = "\n".join(f"  - {dia}: {hora}" for dia, hora in b["horario"].items())
-    politicas = "\n".join(f"  - {k}: {v}" for k, v in b["politicas"].items())
+    b = CONFIG
+    horario = "\n".join(f"  - {dia}: {hora}" for dia, hora in b.get("horario", {}).items())
+    politicas = "\n".join(f"  - {k}: {v}" for k, v in b.get("politicas", {}).items())
+
+    # Bloque de servicios y precios (solo si el negocio los tiene configurados).
+    servicios_block = ""
+    servicios = b.get("servicios", []) or []
+    if servicios:
+        lineas = []
+        for s in servicios:
+            linea = f"  - {s.get('nombre', '')}: {s.get('precio', '')}".rstrip()
+            if s.get("duracion_min"):
+                linea += f" (~{s['duracion_min']} min)"
+            if s.get("descripcion"):
+                linea += f" — {s['descripcion']}"
+            lineas.append(linea)
+        servicios_block = "\n\nSERVICIOS Y PRECIOS:\n" + "\n".join(lineas)
 
     return f"""
 INFORMACIÓN DEL NEGOCIO:
-Nombre: {b['nombre']}
-Descripción: {b['descripcion']}
-Teléfono: {b['telefono']}
-Dirección: {b['direccion']}
-Cómo llegar: {b['como_llegar']}
+Nombre: {b.get('nombre', '')}
+Descripción: {b.get('descripcion', '')}
+Teléfono: {b.get('telefono', '')}
+Dirección: {b.get('direccion', '')}
+Cómo llegar: {b.get('como_llegar', '')}
 
 HORARIO:
-{horario}
+{horario}{servicios_block}
 
 POLÍTICAS:
 {politicas}

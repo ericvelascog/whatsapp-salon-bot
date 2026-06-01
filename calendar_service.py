@@ -4,24 +4,15 @@ from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from config import settings
-from knowledge_base import BUSINESS_INFO
+from business_config import BUSINESS_HOURS
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 TIMEZONE = "Europe/Madrid"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# Horario del negocio por día (0=lunes … 6=domingo, None = cerrado)
-BUSINESS_HOURS: dict[int, tuple[time, time] | None] = {
-    0: (time(14, 0), time(20, 0)), # lunes
-    1: (time(14, 0), time(20, 0)), # martes
-    2: (time(14, 0), time(20, 0)), # miércoles
-    3: (time(14, 0), time(20, 0)), # jueves
-    4: (time(14, 0), time(20, 0)), # viernes
-    5: None,                       # sábado
-    6: None,                       # domingo
-}
-
+# El horario del negocio (BUSINESS_HOURS) se carga desde business_config.
+# Paso de la rejilla de huecos (cada cuánto empieza un hueco posible).
 SLOT_DURATION = timedelta(minutes=30)
 
 
