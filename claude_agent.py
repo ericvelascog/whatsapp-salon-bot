@@ -2,7 +2,7 @@ import anthropic
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from config import settings
-from business_config import CONFIG, IS_DEMO
+from business_config import CONFIG, IS_DEMO, HAS_SERVICES
 from knowledge_base import get_business_info_text
 from tools import TOOLS, dispatch_tool
 import session_store
@@ -17,7 +17,7 @@ Tus funciones son:
 2. Responder preguntas sobre el negocio: horarios, ubicación, servicios y políticas.
 
 REGLAS IMPORTANTES:
-- Para crear una cita siempre necesitas: nombre completo del cliente, fecha y hora.
+- {crear_necesitas}{servicios_rule}
 - Antes de crear una cita, consulta siempre la disponibilidad para esa fecha.
 - Antes de cancelar una cita, muéstrale al cliente la cita encontrada y pide confirmación explícita.
 - Si el cliente pide un día en que el negocio está cerrado, indícaselo amablemente.
@@ -43,10 +43,23 @@ def _build_system_prompt() -> str:
     now = datetime.now(ZoneInfo("Europe/Madrid")).strftime("%A %d/%m/%Y %H:%M")
     asistente = CONFIG.get("asistente", {}) or {}
 
+    if HAS_SERVICES:
+        crear_necesitas = "Para crear una cita necesitas: nombre completo del cliente, servicio, fecha y hora."
+        servicios_rule = (
+            "\n- IMPORTANTE: este negocio tiene varios servicios con distinta duración. "
+            "Pregunta SIEMPRE qué servicio quiere el cliente ANTES de consultar la disponibilidad, "
+            "ya que los huecos disponibles dependen de la duración del servicio elegido."
+        )
+    else:
+        crear_necesitas = "Para crear una cita siempre necesitas: nombre completo del cliente, fecha y hora."
+        servicios_rule = ""
+
     prompt = _BASE_TEMPLATE.format(
         negocio=CONFIG.get("nombre", "un negocio"),
         asistente=asistente.get("nombre", "el asistente"),
         tono=asistente.get("tono", "amable y profesional"),
+        crear_necesitas=crear_necesitas,
+        servicios_rule=servicios_rule,
         now=now,
     )
 

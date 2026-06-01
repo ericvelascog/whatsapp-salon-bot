@@ -76,6 +76,30 @@ CONFIG: dict = _load_raw()
 
 BUSINESS_HOURS: dict[int, tuple[time, time] | None] = _parse_hours(CONFIG.get("horario", {}))
 
+# Duración por defecto cuando el negocio NO distingue servicios.
 APPOINTMENT_DURATION_MIN: int = int(CONFIG.get("duracion_cita_min", 30))
 
 IS_DEMO: bool = bool(CONFIG.get("demo", False))
+
+# ----- Servicios y duraciones -----------------------------------------------
+# Lista de servicios del negocio (vacía = no se distingue por servicio).
+SERVICES: list[dict] = CONFIG.get("servicios", []) or []
+HAS_SERVICES: bool = len(SERVICES) > 0
+# Nombres tal cual para mostrarlos y para el enum de las tools.
+SERVICE_NAMES: list[str] = [s["nombre"] for s in SERVICES if s.get("nombre")]
+
+# Mapa nombre-normalizado -> duración en minutos.
+_SERVICE_DURATIONS: dict[str, int] = {
+    _strip_accents(s["nombre"]).strip().lower(): int(s.get("duracion_min", APPOINTMENT_DURATION_MIN))
+    for s in SERVICES
+    if s.get("nombre")
+}
+
+
+def duration_for_service(service_name: str) -> int:
+    """Devuelve la duración (min) del servicio indicado, o la duración por defecto."""
+    if not service_name:
+        return APPOINTMENT_DURATION_MIN
+    return _SERVICE_DURATIONS.get(
+        _strip_accents(str(service_name)).strip().lower(), APPOINTMENT_DURATION_MIN
+    )
