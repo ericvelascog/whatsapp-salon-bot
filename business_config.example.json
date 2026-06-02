@@ -18,6 +18,11 @@
     { "nombre": "Corte", "precio": "12,00€", "duracion_min": 30, "descripcion": "Corte de cabello a máquina o tijera." },
     { "nombre": "Corte y Barba", "precio": "20,00€", "duracion_min": 45, "descripcion": "Corte de cabello y arreglo de barba." }
   ],
+  "_nota_barberos": "OPCIONAL. Si el negocio tiene VARIOS barberos, pon uno por barbero con su propio calendar_id (comparte cada calendario con la cuenta de servicio). El bot preguntará '¿con quién?'. Si es de UN SOLO barbero, ELIMINA esta sección 'barberos' y se usará el calendario único de la variable GOOGLE_CALENDAR_ID.",
+  "barberos": [
+    { "nombre": "Juan",  "calendar_id": "id_del_calendario_de_juan@group.calendar.google.com" },
+    { "nombre": "Pedro", "calendar_id": "id_del_calendario_de_pedro@group.calendar.google.com" }
+  ],
   "politicas": {
     "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación.",
     "retraso": "Si llegas con más de 15 minutos de retraso, puede que debamos reprogramar tu cita.",

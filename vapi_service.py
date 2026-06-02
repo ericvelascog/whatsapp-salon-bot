@@ -5,6 +5,7 @@ from business_config import (
     APPOINTMENT_DURATION_MIN as APPOINTMENT_DURATION,
     HAS_SERVICES,
     duration_for_service,
+    MULTI_BARBER,
 )
 
 TIMEZONE = ZoneInfo("Europe/Madrid")
@@ -33,7 +34,8 @@ def handle_check_availability(args: dict) -> str:
         target_date, req_time = _parse_vapi_datetime(preferred_dt)
 
         duration = _duration(args.get("serviceType", ""))
-        free_slots = calendar_service.get_free_slots(target_date, duration)
+        barber = args.get("barber", "").strip() if MULTI_BARBER else None
+        free_slots = calendar_service.get_free_slots_multi(target_date, duration, barber or None)
 
         if not free_slots:
             day_name = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][target_date.weekday()]
@@ -56,25 +58,28 @@ def handle_book_appointment(args: dict) -> str:
         phone = args.get("phone", "").strip()
         service_type = args.get("serviceType", "").strip()
         preferred_dt = args.get("preferredDateTime", "")
+        barber = args.get("barber", "").strip() if MULTI_BARBER else None
 
         target_date, start_time = _parse_vapi_datetime(preferred_dt)
 
         duration = _duration(service_type)
         service_label = service_type if (HAS_SERVICES and service_type) else "Cita"
 
-        event = calendar_service.create_appointment(
+        event, assigned = calendar_service.book(
             client_name=name,
             client_phone=phone,
             service=service_label,
             target_date=target_date,
             start_time=start_time,
             duration_minutes=duration,
+            barber_name=barber or None,
         )
 
         dt = datetime.fromisoformat(event["start"]).astimezone(TIMEZONE)
+        con_barbero = f" con {assigned}" if (MULTI_BARBER and assigned) else ""
         return (
             f"Cita confirmada. "
-            f"{service_label} para {name} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
+            f"{service_label} para {name}{con_barbero} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
             f"Teléfono registrado: {phone}."
         )
 
@@ -88,7 +93,7 @@ def handle_cancel_appointment(args: dict) -> str:
     try:
         phone = args.get("phone", "").strip()
 
-        appointments = calendar_service.list_client_appointments(phone)
+        appointments = calendar_service.list_client_appointments_multi(phone)
 
         if not appointments:
             return "No se encontró ninguna cita asociada a ese teléfono."
@@ -96,7 +101,7 @@ def handle_cancel_appointment(args: dict) -> str:
         # Cancelar la primera cita encontrada (la más próxima)
         event_id = appointments[0]["id"]
         summary = appointments[0]["summary"]
-        success = calendar_service.cancel_appointment(event_id)
+        success = calendar_service.cancel_appointment_multi(event_id)
 
         if success:
             return f"Cita cancelada correctamente: {summary}."

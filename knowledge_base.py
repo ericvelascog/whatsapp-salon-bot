@@ -26,6 +26,13 @@ def get_business_info_text() -> str:
             lineas.append(linea)
         servicios_block = "\n\nSERVICIOS Y PRECIOS:\n" + "\n".join(lineas)
 
+    # Bloque de barberos (solo si hay varios configurados).
+    barberos_block = ""
+    barberos = b.get("barberos", []) or []
+    nombres = [x.get("nombre", "") for x in barberos if x.get("nombre")]
+    if len(nombres) > 1:
+        barberos_block = "\n\nBARBEROS: " + ", ".join(nombres)
+
     return f"""
 INFORMACIÓN DEL NEGOCIO:
 Nombre: {b.get('nombre', '')}
@@ -35,7 +42,7 @@ Dirección: {b.get('direccion', '')}
 Cómo llegar: {b.get('como_llegar', '')}
 
 HORARIO:
-{horario}{servicios_block}
+{horario}{servicios_block}{barberos_block}
 
 POLÍTICAS:
 {politicas}

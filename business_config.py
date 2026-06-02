@@ -103,3 +103,22 @@ def duration_for_service(service_name: str) -> int:
     return _SERVICE_DURATIONS.get(
         _strip_accents(str(service_name)).strip().lower(), APPOINTMENT_DURATION_MIN
     )
+
+
+# ----- Barberos / profesionales (multi-calendario) --------------------------
+# Lista de barberos, cada uno con su propio calendario (vacía = un solo calendario).
+BARBERS: list[dict] = CONFIG.get("barberos", []) or []
+HAS_BARBERS: bool = len(BARBERS) > 0
+MULTI_BARBER: bool = len(BARBERS) > 1  # solo se pregunta "¿con quién?" si hay más de uno
+BARBER_NAMES: list[str] = [b["nombre"] for b in BARBERS if b.get("nombre")]
+
+
+def calendar_for_barber(barber_name: str) -> str | None:
+    """Devuelve el calendar_id del barbero indicado (None si no se encuentra)."""
+    if not barber_name:
+        return None
+    target = _strip_accents(str(barber_name)).strip().lower()
+    for b in BARBERS:
+        if _strip_accents(str(b.get("nombre", ""))).strip().lower() == target:
+            return b.get("calendar_id")
+    return None

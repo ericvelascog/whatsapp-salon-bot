@@ -2,7 +2,7 @@ import anthropic
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from config import settings
-from business_config import CONFIG, IS_DEMO, HAS_SERVICES
+from business_config import CONFIG, IS_DEMO, HAS_SERVICES, MULTI_BARBER, BARBER_NAMES
 from knowledge_base import get_business_info_text
 from tools import TOOLS, dispatch_tool
 import session_store
@@ -17,7 +17,7 @@ Tus funciones son:
 2. Responder preguntas sobre el negocio: horarios, ubicación, servicios y políticas.
 
 REGLAS IMPORTANTES:
-- {crear_necesitas}{servicios_rule}
+- {crear_necesitas}{servicios_rule}{barberos_rule}
 - Antes de crear una cita, consulta siempre la disponibilidad para esa fecha.
 - Antes de cancelar una cita, muéstrale al cliente la cita encontrada y pide confirmación explícita.
 - Si el cliente pide un día en que el negocio está cerrado, indícaselo amablemente.
@@ -54,12 +54,24 @@ def _build_system_prompt() -> str:
         crear_necesitas = "Para crear una cita siempre necesitas: nombre completo del cliente, fecha y hora."
         servicios_rule = ""
 
+    if MULTI_BARBER:
+        barberos_rule = (
+            "\n- Este negocio tiene varios barberos: " + ", ".join(BARBER_NAMES) + ". "
+            "Pregunta SIEMPRE al cliente si quiere uno concreto o le da igual. "
+            "Si elige uno, pásalo al consultar disponibilidad y al crear la cita; si le da igual, "
+            "no especifiques barbero y el sistema asignará uno libre. "
+            "Cuando confirmes la reserva, dile con qué barbero ha quedado."
+        )
+    else:
+        barberos_rule = ""
+
     prompt = _BASE_TEMPLATE.format(
         negocio=CONFIG.get("nombre", "un negocio"),
         asistente=asistente.get("nombre", "el asistente"),
         tono=asistente.get("tono", "amable y profesional"),
         crear_necesitas=crear_necesitas,
         servicios_rule=servicios_rule,
+        barberos_rule=barberos_rule,
         now=now,
     )
 

@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from config import settings
-from business_config import BUSINESS_HOURS
+from business_config import BUSINESS_HOURS, BARBERS, calendar_for_barber
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -36,12 +36,25 @@ def _tz() -> ZoneInfo:
     return ZoneInfo(TIMEZONE)
 
 
-def get_free_slots(target_date: date, duration_minutes: int = 30) -> list[str]:
-    """Devuelve lista de horas disponibles (HH:MM) para una fecha dada."""
+def _all_calendars() -> list[tuple]:
+    """Devuelve [(nombre_barbero, calendar_id), ...].
+
+    Si hay barberos configurados, uno por barbero; si no, un único calendario
+    (el de la variable GOOGLE_CALENDAR_ID), con nombre None.
+    """
+    if BARBERS:
+        return [(b.get("nombre"), b["calendar_id"]) for b in BARBERS if b.get("calendar_id")]
+    return [(None, settings.google_calendar_id)]
+
+
+# ---------------------------------------------------------------- nivel base
+def get_free_slots(target_date: date, duration_minutes: int = 30, calendar_id: str | None = None) -> list[str]:
+    """Devuelve lista de horas disponibles (HH:MM) para una fecha y un calendario."""
     hours = BUSINESS_HOURS.get(target_date.weekday())
     if not hours:
         return []
 
+    cid = calendar_id or settings.google_calendar_id
     service = _get_service()
     tz = _tz()
 
@@ -52,10 +65,10 @@ def get_free_slots(target_date: date, duration_minutes: int = 30) -> list[str]:
         "timeMin": day_start.isoformat(),
         "timeMax": day_end.isoformat(),
         "timeZone": TIMEZONE,
-        "items": [{"id": settings.google_calendar_id}],
+        "items": [{"id": cid}],
     }
     freebusy = service.freebusy().query(body=body).execute()
-    busy_periods = freebusy["calendars"][settings.google_calendar_id]["busy"]
+    busy_periods = freebusy["calendars"][cid]["busy"]
 
     busy_ranges = [
         (datetime.fromisoformat(p["start"]), datetime.fromisoformat(p["end"]))
@@ -81,8 +94,10 @@ def create_appointment(
     target_date: date,
     start_time: time,
     duration_minutes: int = 60,
+    calendar_id: str | None = None,
 ) -> dict:
-    """Crea una cita en Google Calendar. Devuelve el evento creado."""
+    """Crea una cita en el calendario indicado. Devuelve el evento creado."""
+    cid = calendar_id or settings.google_calendar_id
     service_obj = _get_service()
     tz = _tz()
 
@@ -96,9 +111,7 @@ def create_appointment(
         "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE},
     }
 
-    created = service_obj.events().insert(
-        calendarId=settings.google_calendar_id, body=event
-    ).execute()
+    created = service_obj.events().insert(calendarId=cid, body=event).execute()
 
     return {
         "id": created["id"],
@@ -109,14 +122,15 @@ def create_appointment(
     }
 
 
-def list_client_appointments(client_phone: str) -> list[dict]:
-    """Lista las citas futuras de un cliente por su número de teléfono."""
+def list_client_appointments(client_phone: str, calendar_id: str | None = None) -> list[dict]:
+    """Lista las citas futuras de un cliente por su teléfono, en un calendario."""
+    cid = calendar_id or settings.google_calendar_id
     service = _get_service()
     tz = _tz()
     now = datetime.now(tz).isoformat()
 
     events_result = service.events().list(
-        calendarId=settings.google_calendar_id,
+        calendarId=cid,
         timeMin=now,
         maxResults=10,
         singleEvents=True,
@@ -135,13 +149,77 @@ def list_client_appointments(client_phone: str) -> list[dict]:
     ]
 
 
-def cancel_appointment(event_id: str) -> bool:
-    """Cancela (elimina) una cita por su ID. Devuelve True si tuvo éxito."""
+def cancel_appointment(event_id: str, calendar_id: str | None = None) -> bool:
+    """Cancela (elimina) una cita por su ID en un calendario. True si tuvo éxito."""
+    cid = calendar_id or settings.google_calendar_id
     service = _get_service()
     try:
-        service.events().delete(
-            calendarId=settings.google_calendar_id, eventId=event_id
-        ).execute()
+        service.events().delete(calendarId=cid, eventId=event_id).execute()
         return True
     except Exception:
         return False
+
+
+# ---------------------------------------------------------- nivel multi-barbero
+def get_free_slots_multi(target_date: date, duration_minutes: int = 30, barber_name: str | None = None) -> list[str]:
+    """Huecos del barbero indicado, o la UNIÓN de todos si no se especifica."""
+    if barber_name:
+        cid = calendar_for_barber(barber_name) or settings.google_calendar_id
+        return get_free_slots(target_date, duration_minutes, cid)
+
+    all_slots: set[str] = set()
+    for _, cid in _all_calendars():
+        all_slots.update(get_free_slots(target_date, duration_minutes, cid))
+    return sorted(all_slots)
+
+
+def book(
+    client_name: str,
+    client_phone: str,
+    service: str,
+    target_date: date,
+    start_time: time,
+    duration_minutes: int = 30,
+    barber_name: str | None = None,
+) -> tuple[dict, str | None]:
+    """Reserva con el barbero indicado o asigna uno libre. Devuelve (evento, barbero_asignado)."""
+    cals = _all_calendars()
+
+    if barber_name:
+        cid = calendar_for_barber(barber_name) or settings.google_calendar_id
+        assigned = barber_name
+    elif len(cals) == 1:
+        assigned, cid = cals[0]
+    else:
+        # Asignar al primer barbero libre a esa hora
+        slot_str = start_time.strftime("%H:%M")
+        assigned, cid = None, None
+        for name, c in cals:
+            if slot_str in get_free_slots(target_date, duration_minutes, c):
+                assigned, cid = name, c
+                break
+        if cid is None:  # nadie libre: usar el primero (caso límite)
+            assigned, cid = cals[0]
+
+    event = create_appointment(
+        client_name, client_phone, service, target_date, start_time, duration_minutes, cid
+    )
+    return event, assigned
+
+
+def list_client_appointments_multi(client_phone: str) -> list[dict]:
+    """Lista las citas del cliente en TODOS los calendarios (con el barbero)."""
+    out = []
+    for name, cid in _all_calendars():
+        for a in list_client_appointments(client_phone, cid):
+            a["barbero"] = name
+            out.append(a)
+    return out
+
+
+def cancel_appointment_multi(event_id: str) -> bool:
+    """Cancela una cita buscándola en TODOS los calendarios."""
+    for _, cid in _all_calendars():
+        if cancel_appointment(event_id, cid):
+            return True
+    return False

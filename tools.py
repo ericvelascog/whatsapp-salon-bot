@@ -5,6 +5,8 @@ from business_config import (
     HAS_SERVICES,
     SERVICE_NAMES,
     duration_for_service,
+    MULTI_BARBER,
+    BARBER_NAMES,
 )
 
 
@@ -17,14 +19,28 @@ def _service_property() -> dict:
     }
 
 
-# --- check_availability: el parámetro 'service' solo existe si hay servicios ---
+def _barber_property() -> dict:
+    """Parámetro 'barber' limitado a los barberos del negocio (opcional)."""
+    return {
+        "type": "string",
+        "description": (
+            "Barbero/profesional con el que quiere el cliente. "
+            "Si al cliente le da igual, NO incluyas este parámetro."
+        ),
+        "enum": BARBER_NAMES,
+    }
+
+
+# --- check_availability ---
 _check_props: dict = {"date": {"type": "string", "description": "Fecha en formato YYYY-MM-DD"}}
 _check_required = ["date"]
 if HAS_SERVICES:
     _check_props["service"] = _service_property()
     _check_required.append("service")
+if MULTI_BARBER:
+    _check_props["barber"] = _barber_property()  # opcional
 
-# --- create_appointment: igual, 'service' solo si hay servicios ---
+# --- create_appointment ---
 _create_props: dict = {
     "client_name": {"type": "string", "description": "Nombre completo del cliente"},
     "client_phone": {"type": "string", "description": "Número de WhatsApp del cliente"},
@@ -35,15 +51,17 @@ _create_required = ["client_name", "client_phone", "date", "time"]
 if HAS_SERVICES:
     _create_props["service"] = _service_property()
     _create_required.append("service")
+if MULTI_BARBER:
+    _create_props["barber"] = _barber_property()  # opcional
 
 _check_desc = (
     "Consulta los horarios disponibles para reservar una cita en una fecha concreta. "
     "Úsala antes de crear una cita para mostrar al cliente las horas libres."
 )
 if HAS_SERVICES:
-    _check_desc += (
-        " La duración de la cita depende del servicio, así que necesitas saber el servicio antes de llamarla."
-    )
+    _check_desc += " La duración de la cita depende del servicio, así que necesitas saber el servicio antes de llamarla."
+if MULTI_BARBER:
+    _check_desc += " Si el cliente quiere un barbero concreto, pásalo; si le da igual, no lo pases y se mostrará la disponibilidad de todos."
 
 _create_desc = (
     "Crea una cita en el calendario del salón. "
@@ -104,51 +122,51 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     try:
         if tool_name == "check_availability":
             target = date.fromisoformat(tool_input["date"])
-            if HAS_SERVICES:
-                duration = duration_for_service(tool_input.get("service", ""))
-            else:
-                duration = APPOINTMENT_DURATION_MIN
-            slots = calendar_service.get_free_slots(target, duration)
+            duration = duration_for_service(tool_input["service"]) if HAS_SERVICES else APPOINTMENT_DURATION_MIN
+            barber = tool_input.get("barber") if MULTI_BARBER else None
+            slots = calendar_service.get_free_slots_multi(target, duration, barber)
             if not slots:
-                return f"No hay disponibilidad el {target.strftime('%A %d/%m/%Y')} (día cerrado o sin huecos libres)."
+                quien = f" con {barber}" if barber else ""
+                return f"No hay disponibilidad{quien} el {target.strftime('%A %d/%m/%Y')} (día cerrado o sin huecos libres)."
             return f"Horas disponibles el {target.strftime('%A %d/%m/%Y')}: {', '.join(slots)}"
 
         elif tool_name == "create_appointment":
             target_date = date.fromisoformat(tool_input["date"])
             start_time = time.fromisoformat(tool_input["time"])
-            if HAS_SERVICES:
-                service = tool_input.get("service", "Cita")
-                duration = duration_for_service(service)
-            else:
-                service = "Cita"
-                duration = APPOINTMENT_DURATION_MIN
-            event = calendar_service.create_appointment(
+            service = tool_input.get("service", "Cita") if HAS_SERVICES else "Cita"
+            duration = duration_for_service(service) if HAS_SERVICES else APPOINTMENT_DURATION_MIN
+            barber = tool_input.get("barber") if MULTI_BARBER else None
+
+            event, assigned = calendar_service.book(
                 client_name=tool_input["client_name"],
                 client_phone=tool_input["client_phone"],
                 service=service,
                 target_date=target_date,
                 start_time=start_time,
                 duration_minutes=duration,
+                barber_name=barber,
             )
             dt = datetime.fromisoformat(event["start"])
+            barbero_line = f"\nBarbero: {assigned}" if (MULTI_BARBER and assigned) else ""
             return (
-                f"Cita creada correctamente.\n"
+                f"Cita creada correctamente.{barbero_line}\n"
                 f"Fecha y hora: {dt.strftime('%A %d/%m/%Y a las %H:%M')}\n"
                 f"ID de la cita: {event['id']}"
             )
 
         elif tool_name == "list_client_appointments":
-            appointments = calendar_service.list_client_appointments(tool_input["client_phone"])
+            appointments = calendar_service.list_client_appointments_multi(tool_input["client_phone"])
             if not appointments:
                 return "No se encontraron citas próximas para este cliente."
             lines = []
             for a in appointments:
                 dt = datetime.fromisoformat(a["start"])
-                lines.append(f"- {a['summary']} | {dt.strftime('%d/%m/%Y %H:%M')} | ID: {a['id']}")
+                barbero = f" | {a['barbero']}" if a.get("barbero") else ""
+                lines.append(f"- {a['summary']}{barbero} | {dt.strftime('%d/%m/%Y %H:%M')} | ID: {a['id']}")
             return "Próximas citas:\n" + "\n".join(lines)
 
         elif tool_name == "cancel_appointment":
-            success = calendar_service.cancel_appointment(tool_input["event_id"])
+            success = calendar_service.cancel_appointment_multi(tool_input["event_id"])
             return "Cita cancelada correctamente." if success else "No se pudo cancelar la cita. Verifica el ID."
 
         else:
