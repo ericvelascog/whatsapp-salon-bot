@@ -109,7 +109,7 @@ Guarda la fecha y hora en formato `YYYY/MM/DD HH:MM`.
 
 Llama a `checkAvailability` (con `serviceType` y `preferredDateTime`) y espera la respuesta antes de decir nada.
 
-`{{result}}` contiene los huecos en formato "Huecos disponibles: HH:MM, HH:MM, ..." o un mensaje de que no hay disponibilidad / día cerrado.
+`{{result}}` llega ya en formato hablado y con los tramos seguidos agrupados ("Tenemos todo el día libre, de las dos a las ocho de la tarde" / "Huecos disponibles: de las cinco a las siete de la tarde, las ocho y cuarto"), o un mensaje de que no hay disponibilidad / día cerrado. Entre paréntesis vienen los inicios exactos HH:MM, SOLO para rellenar las herramientas: nunca los digas en voz alta. Repite la disponibilidad en rangos tal cual viene; nunca enumeres hora por hora si te llega un rango.
 
 - El paciente pidió una hora concreta y está en la lista → confírmala y avanza al Paso 3.
 - Pidió una hora que NO está → infórmale y ofrece las alternativas.

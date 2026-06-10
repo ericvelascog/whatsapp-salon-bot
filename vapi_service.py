@@ -53,20 +53,79 @@ def _slot_to_speech(slot: str) -> tuple[str, str]:
     return f"{base} y {m}", period
 
 
-def _slots_to_speech(slots: list[str], max_items: int = 10) -> str:
-    """Lista de huecos en formato hablado; la franja solo se dice cuando cambia."""
+def _t2m(slot: str) -> int:
+    h, m = slot.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _m2t(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _range_speech(start_slot: str, end_slot: str) -> tuple[str, str]:
+    """'de las dos a las cinco de la tarde' (la franja solo se repite si cambia)."""
+    start_txt, start_period = _slot_to_speech(start_slot)
+    end_txt, end_period = _slot_to_speech(end_slot)
+    if start_period != end_period:
+        start_txt = f"{start_txt} {start_period}"
+    return f"de {start_txt} a {end_txt} {end_period}", end_period
+
+
+def _slots_to_speech(slots: list[str], step_min: int) -> str:
+    """Huecos en formato hablado, agrupando tramos consecutivos en rangos.
+
+    Tramos de 3+ huecos seguidos se dicen como rango ("de las cinco a las nueve");
+    huecos sueltos se dicen uno a uno. La franja del día solo se dice al cambiar.
+    """
+    # Partir en tramos consecutivos (cada hueco empieza donde acaba el anterior).
+    runs: list[list[str]] = [[slots[0]]]
+    for s in slots[1:]:
+        if _t2m(s) - _t2m(runs[-1][-1]) == step_min:
+            runs[-1].append(s)
+        else:
+            runs.append([s])
+
     parts = []
     last_period = None
-    for s in slots[:max_items]:
-        text, period = _slot_to_speech(s)
-        if period != last_period:
-            text = f"{text} {period}"
-            last_period = period
-        parts.append(text)
-    extra = len(slots) - max_items
-    if extra > 0:
-        parts.append(f"y {extra} horas más")
+    for run in runs:
+        if len(run) >= 3:
+            end_slot = _m2t(_t2m(run[-1]) + step_min)  # fin de la última cita del tramo
+            text, last_period = _range_speech(run[0], end_slot)
+            parts.append(text)
+        else:
+            for s in run:
+                text, period = _slot_to_speech(s)
+                if period != last_period:
+                    text = f"{text} {period}"
+                    last_period = period
+                parts.append(text)
     return ", ".join(parts)
+
+
+def _free_slots_speech(free_slots: list[str], step_min: int, target_date: date) -> str:
+    """Frase completa de disponibilidad para voz, con caso especial de día entero libre."""
+    hours = BUSINESS_HOURS.get(target_date.weekday())
+    equivalencias = (
+        f" (Inicios exactos SOLO para las herramientas, no los digas: "
+        f"{', '.join(free_slots)}.)"
+    )
+
+    # ¿Día entero libre? Un solo tramo que va de la apertura al cierre.
+    if hours:
+        open_min = hours[0].hour * 60 + hours[0].minute
+        close_min = hours[1].hour * 60 + hours[1].minute
+        contiguous = all(
+            _t2m(b) - _t2m(a) == step_min for a, b in zip(free_slots, free_slots[1:])
+        )
+        if (
+            contiguous
+            and _t2m(free_slots[0]) == open_min
+            and _t2m(free_slots[-1]) + step_min == close_min
+        ):
+            rango, _ = _range_speech(free_slots[0], _m2t(close_min))
+            return f"Tenemos todo el día libre, {rango}.{equivalencias}"
+
+    return f"Huecos disponibles: {_slots_to_speech(free_slots, step_min)}.{equivalencias}"
 
 
 def _parse_vapi_datetime(dt_str: str) -> tuple[date, time]:
@@ -111,13 +170,9 @@ def handle_check_availability(args: dict) -> str:
                 return f"El {day_name} la clínica está cerrada. ¿Te viene bien otro día?"
             return "Lo siento, ese día no hay huecos disponibles. ¿Te viene bien otro día?"
 
-        # Forma hablada para que el TTS no deletree "14:30"; las equivalencias
-        # exactas van aparte porque bookAppointment necesita el formato HH:MM.
-        return (
-            f"Huecos disponibles: {_slots_to_speech(free_slots)}. "
-            f"(Equivalencias exactas SOLO para las herramientas, no las digas: "
-            f"{', '.join(free_slots)}.)"
-        )
+        # Forma hablada (con tramos agrupados) para que el TTS no deletree "14:30";
+        # los inicios exactos van aparte porque bookAppointment necesita HH:MM.
+        return _free_slots_speech(free_slots, duration, target_date)
 
     except Exception as e:
         import traceback
@@ -163,11 +218,7 @@ def handle_book_appointment(args: dict) -> str:
     except calendar_service.SlotUnavailableError as e:
         # Hueco ya ocupado: alternativas en formato hablado para el TTS.
         if e.free_slots:
-            return (
-                f"Esa hora ya no está disponible. Huecos libres: {_slots_to_speech(e.free_slots)}. "
-                f"(Equivalencias exactas SOLO para las herramientas, no las digas: "
-                f"{', '.join(e.free_slots)}.)"
-            )
+            return "Esa hora ya no está disponible. " + _free_slots_speech(e.free_slots, duration, target_date)
         return "Esa hora ya no está disponible y no quedan huecos ese día. ¿Te viene bien otro día?"
     except Exception as e:
         import traceback
