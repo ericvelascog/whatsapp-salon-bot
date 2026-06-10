@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str
     webhook_verify_token: str
     anthropic_api_key: str
-    # En modo multi-barbero los calendarios vienen de BUSINESS_CONFIG, así que
+    # En modo multi-profesional los calendarios vienen de BUSINESS_CONFIG, así que
     # esta variable es opcional (solo se usa en modo de un único calendario).
     google_calendar_id: str = ""
     google_credentials_json: str = "credentials.json"

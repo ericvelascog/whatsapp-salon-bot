@@ -12,7 +12,7 @@ from llm_service import (
     build_non_streaming_response,
 )
 
-app = FastAPI(title="WhatsApp Salon Bot")
+app = FastAPI(title="WhatsApp Fisio Bot")
 
 
 @app.get("/webhook")

@@ -1,7 +1,7 @@
 {
   "_nota": "Esta es la configuración del BOT DEMO (fallback). Para un cliente real NO se edita este archivo: se rellena el JSON y se pega en la variable de entorno BUSINESS_CONFIG de su despliegue en Railway.",
-  "nombre": "Barbería de Prueba",
-  "descripcion": "Barbería de barrio para hombres, abierta a todo tipo de públicos. Cortes clásicos y modernos en un ambiente cercano y sin pretensiones.",
+  "nombre": "Clínica Fisio de Prueba",
+  "descripcion": "Clínica de fisioterapia y osteopatía de barrio, con trato cercano. Tratamiento de lesiones, dolor de espalda, recuperación deportiva y terapia manual.",
   "telefono": "+34 (931) 20 85 91",
   "direccion": "Carrer del Mar 8, Badalona",
   "como_llegar": "Consulta Google Maps para la ruta más conveniente.",
@@ -16,16 +16,16 @@
   },
   "servicios": [],
   "politicas": {
-    "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación.",
-    "retraso": "Si llegas con más de 15 minutos de retraso, puede que no podamos atenderte y debamos reprogramar tu cita.",
+    "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación para que otro paciente pueda aprovechar el hueco.",
+    "retraso": "Si llegas con más de 15 minutos de retraso, puede que no podamos atenderte y debamos reprogramar tu sesión.",
     "pago": "Aceptamos efectivo y tarjeta de crédito/débito.",
     "reservas": "Las citas se reservan por WhatsApp. Para hablar con nuestro asistente de voz llama al +34 (931) 20 85 91."
   },
   "asistente": {
-    "nombre": "Bella",
+    "nombre": "Clara",
     "tono": "amable, profesional y concisa"
   },
-  "duracion_cita_min": 30,
+  "duracion_cita_min": 45,
   "demo": true,
   "contacto_comercial": {
     "nombre": "Eric",

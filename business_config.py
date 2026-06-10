@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Cargador de la configuración del negocio.
+Cargador de la configuración del negocio (clínica de fisioterapia / osteopatía).
 
 Toda la información específica de cada cliente (nombre, horario, servicios,
 políticas, etc.) vive AQUÍ como datos, no en el código. Así el mismo código
-sirve para todos los clientes y solo cambia esta configuración.
+sirve para todas las clínicas y solo cambia esta configuración.
 
 Origen de los datos (por orden de prioridad):
   1. Variable de entorno BUSINESS_CONFIG  -> JSON completo (PRODUCCIÓN / por cliente)
@@ -76,13 +76,13 @@ CONFIG: dict = _load_raw()
 
 BUSINESS_HOURS: dict[int, tuple[time, time] | None] = _parse_hours(CONFIG.get("horario", {}))
 
-# Duración por defecto cuando el negocio NO distingue servicios.
-APPOINTMENT_DURATION_MIN: int = int(CONFIG.get("duracion_cita_min", 30))
+# Duración por defecto cuando la clínica NO distingue servicios.
+APPOINTMENT_DURATION_MIN: int = int(CONFIG.get("duracion_cita_min", 45))
 
 IS_DEMO: bool = bool(CONFIG.get("demo", False))
 
 # ----- Servicios y duraciones -----------------------------------------------
-# Lista de servicios del negocio (vacía = no se distingue por servicio).
+# Lista de servicios de la clínica (vacía = no se distingue por servicio).
 SERVICES: list[dict] = CONFIG.get("servicios", []) or []
 HAS_SERVICES: bool = len(SERVICES) > 0
 # Nombres tal cual para mostrarlos y para el enum de las tools.
@@ -105,20 +105,23 @@ def duration_for_service(service_name: str) -> int:
     )
 
 
-# ----- Barberos / profesionales (multi-calendario) --------------------------
-# Lista de barberos, cada uno con su propio calendario (vacía = un solo calendario).
-BARBERS: list[dict] = CONFIG.get("barberos", []) or []
-HAS_BARBERS: bool = len(BARBERS) > 0
-MULTI_BARBER: bool = len(BARBERS) > 1  # solo se pregunta "¿con quién?" si hay más de uno
-BARBER_NAMES: list[str] = [b["nombre"] for b in BARBERS if b.get("nombre")]
+# ----- Fisioterapeutas / profesionales (multi-calendario) --------------------
+# Lista de profesionales, cada uno con su propio calendario (vacía = un solo calendario).
+# Se aceptan las claves "profesionales" y "fisioterapeutas" en el JSON.
+PROFESSIONALS: list[dict] = (
+    CONFIG.get("profesionales") or CONFIG.get("fisioterapeutas") or []
+)
+HAS_PROFESSIONALS: bool = len(PROFESSIONALS) > 0
+MULTI_PROFESSIONAL: bool = len(PROFESSIONALS) > 1  # solo se pregunta "¿con quién?" si hay más de uno
+PROFESSIONAL_NAMES: list[str] = [p["nombre"] for p in PROFESSIONALS if p.get("nombre")]
 
 
-def calendar_for_barber(barber_name: str) -> str | None:
-    """Devuelve el calendar_id del barbero indicado (None si no se encuentra)."""
-    if not barber_name:
+def calendar_for_professional(professional_name: str) -> str | None:
+    """Devuelve el calendar_id del profesional indicado (None si no se encuentra)."""
+    if not professional_name:
         return None
-    target = _strip_accents(str(barber_name)).strip().lower()
-    for b in BARBERS:
-        if _strip_accents(str(b.get("nombre", ""))).strip().lower() == target:
-            return b.get("calendar_id")
+    target = _strip_accents(str(professional_name)).strip().lower()
+    for p in PROFESSIONALS:
+        if _strip_accents(str(p.get("nombre", ""))).strip().lower() == target:
+            return p.get("calendar_id")
     return None

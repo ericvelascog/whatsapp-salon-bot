@@ -2,11 +2,7 @@ import json
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import anthropic
-from config import settings
-from tools import TOOLS, dispatch_tool
-
-client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+from agent_core import MODEL, run_agent_loop
 
 
 def _inject_date(system_prompt: str) -> str:
@@ -38,48 +34,20 @@ def _openai_to_anthropic_messages(messages: list[dict]) -> tuple[str, list[dict]
 
 
 def _run_agentic_loop(system: str, messages: list[dict]) -> str:
-    """Ejecuta el loop Claude + tools y devuelve el texto final."""
-    working_messages = list(messages)
+    """Loop Claude + tools para el endpoint de voz.
 
-    while True:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=system,
-            tools=TOOLS,
-            messages=working_messages,
-        )
-
-        if response.stop_reason == "end_turn":
-            for block in response.content:
-                if hasattr(block, "text"):
-                    return block.text
-            return ""
-
-        if response.stop_reason == "tool_use":
-            working_messages.append({"role": "assistant", "content": response.content})
-
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    result = dispatch_tool(block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-
-            working_messages.append({"role": "user", "content": tool_results})
-            continue
-
-        # stop_reason inesperado
-        for block in response.content:
-            if hasattr(block, "text"):
-                return block.text
-        return ""
+    effort="low": en una llamada de voz la latencia manda; las reservas no
+    necesitan razonamiento profundo. El bloque de system lleva cache_control:
+    dentro de una misma llamada VAPI manda varias peticiones por minuto con el
+    mismo prefijo, así que los turnos siguientes leen de caché.
+    """
+    system_blocks = [
+        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+    ]
+    return run_agent_loop(system_blocks, messages, effort="low")
 
 
-def build_streaming_response(text: str, model: str = "claude-sonnet-4-6"):
+def build_streaming_response(text: str, model: str = MODEL):
     """
     Genera chunks SSE en formato OpenAI para enviar a VAPI.
     Emite el texto en un único chunk y cierra con [DONE].
@@ -117,7 +85,7 @@ def build_streaming_response(text: str, model: str = "claude-sonnet-4-6"):
     yield "data: [DONE]\n\n"
 
 
-def build_non_streaming_response(text: str, model: str = "claude-sonnet-4-6") -> dict:
+def build_non_streaming_response(text: str, model: str = MODEL) -> dict:
     """Respuesta OpenAI estándar (no streaming)."""
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",

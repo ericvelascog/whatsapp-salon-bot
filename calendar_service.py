@@ -4,14 +4,14 @@ from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from config import settings
-from business_config import BUSINESS_HOURS, BARBERS, calendar_for_barber
+from business_config import BUSINESS_HOURS, PROFESSIONALS, calendar_for_professional
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 TIMEZONE = "Europe/Madrid"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# El horario del negocio (BUSINESS_HOURS) se carga desde business_config.
+# El horario de la clínica (BUSINESS_HOURS) se carga desde business_config.
 # Paso de la rejilla de huecos (cada cuánto empieza un hueco posible).
 SLOT_DURATION = timedelta(minutes=30)
 
@@ -37,18 +37,18 @@ def _tz() -> ZoneInfo:
 
 
 def _all_calendars() -> list[tuple]:
-    """Devuelve [(nombre_barbero, calendar_id), ...].
+    """Devuelve [(nombre_profesional, calendar_id), ...].
 
-    Si hay barberos configurados, uno por barbero; si no, un único calendario
-    (el de la variable GOOGLE_CALENDAR_ID), con nombre None.
+    Si hay profesionales configurados, uno por profesional; si no, un único
+    calendario (el de la variable GOOGLE_CALENDAR_ID), con nombre None.
     """
-    if BARBERS:
-        return [(b.get("nombre"), b["calendar_id"]) for b in BARBERS if b.get("calendar_id")]
+    if PROFESSIONALS:
+        return [(p.get("nombre"), p["calendar_id"]) for p in PROFESSIONALS if p.get("calendar_id")]
     return [(None, settings.google_calendar_id)]
 
 
 # ---------------------------------------------------------------- nivel base
-def get_free_slots(target_date: date, duration_minutes: int = 30, calendar_id: str | None = None) -> list[str]:
+def get_free_slots(target_date: date, duration_minutes: int = 45, calendar_id: str | None = None) -> list[str]:
     """Devuelve lista de horas disponibles (HH:MM) para una fecha y un calendario."""
     hours = BUSINESS_HOURS.get(target_date.weekday())
     if not hours:
@@ -93,8 +93,9 @@ def create_appointment(
     service: str,
     target_date: date,
     start_time: time,
-    duration_minutes: int = 60,
+    duration_minutes: int = 45,
     calendar_id: str | None = None,
+    reason: str = "",
 ) -> dict:
     """Crea una cita en el calendario indicado. Devuelve el evento creado."""
     cid = calendar_id or settings.google_calendar_id
@@ -104,9 +105,13 @@ def create_appointment(
     start_dt = datetime.combine(target_date, start_time, tzinfo=tz)
     end_dt = start_dt + timedelta(minutes=duration_minutes)
 
+    description = f"Paciente: {client_name}\nTeléfono: {client_phone}\nServicio: {service}"
+    if reason:
+        description += f"\nMotivo de la consulta: {reason}"
+
     event = {
         "summary": f"{service} - {client_name} - {client_phone}",
-        "description": f"Cliente: {client_name}\nTeléfono: {client_phone}\nServicio: {service}",
+        "description": description,
         "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE},
         "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE},
     }
@@ -123,7 +128,7 @@ def create_appointment(
 
 
 def list_client_appointments(client_phone: str, calendar_id: str | None = None) -> list[dict]:
-    """Lista las citas futuras de un cliente por su teléfono, en un calendario."""
+    """Lista las citas futuras de un paciente por su teléfono, en un calendario."""
     cid = calendar_id or settings.google_calendar_id
     service = _get_service()
     tz = _tz()
@@ -160,11 +165,11 @@ def cancel_appointment(event_id: str, calendar_id: str | None = None) -> bool:
         return False
 
 
-# ---------------------------------------------------------- nivel multi-barbero
-def get_free_slots_multi(target_date: date, duration_minutes: int = 30, barber_name: str | None = None) -> list[str]:
-    """Huecos del barbero indicado, o la UNIÓN de todos si no se especifica."""
-    if barber_name:
-        cid = calendar_for_barber(barber_name) or settings.google_calendar_id
+# ------------------------------------------------------- nivel multi-profesional
+def get_free_slots_multi(target_date: date, duration_minutes: int = 45, professional_name: str | None = None) -> list[str]:
+    """Huecos del profesional indicado, o la UNIÓN de todos si no se especifica."""
+    if professional_name:
+        cid = calendar_for_professional(professional_name) or settings.google_calendar_id
         return get_free_slots(target_date, duration_minutes, cid)
 
     all_slots: set[str] = set()
@@ -179,40 +184,63 @@ def book(
     service: str,
     target_date: date,
     start_time: time,
-    duration_minutes: int = 30,
-    barber_name: str | None = None,
+    duration_minutes: int = 45,
+    professional_name: str | None = None,
+    reason: str = "",
 ) -> tuple[dict, str | None]:
-    """Reserva con el barbero indicado o asigna uno libre. Devuelve (evento, barbero_asignado)."""
-    cals = _all_calendars()
+    """Reserva con el profesional indicado o asigna uno libre.
 
-    if barber_name:
-        cid = calendar_for_barber(barber_name) or settings.google_calendar_id
-        assigned = barber_name
+    Valida SIEMPRE contra el calendario que la hora pedida sigue libre antes de
+    crear el evento (evita dobles reservas si dos pacientes piden el mismo hueco).
+    Devuelve (evento, profesional_asignado). Lanza ValueError si no hay hueco.
+    """
+    cals = _all_calendars()
+    slot_str = start_time.strftime("%H:%M")
+
+    if professional_name:
+        cid = calendar_for_professional(professional_name) or settings.google_calendar_id
+        assigned = professional_name
+        free = get_free_slots(target_date, duration_minutes, cid)
+        if slot_str not in free:
+            raise ValueError(
+                f"La hora {slot_str} ya no está disponible con {professional_name}. "
+                f"Huecos libres ese día: {', '.join(free) if free else 'ninguno'}."
+            )
     elif len(cals) == 1:
         assigned, cid = cals[0]
+        free = get_free_slots(target_date, duration_minutes, cid)
+        if slot_str not in free:
+            raise ValueError(
+                f"La hora {slot_str} ya no está disponible. "
+                f"Huecos libres ese día: {', '.join(free) if free else 'ninguno'}."
+            )
     else:
-        # Asignar al primer barbero libre a esa hora
-        slot_str = start_time.strftime("%H:%M")
+        # Asignar al primer profesional libre a esa hora
         assigned, cid = None, None
         for name, c in cals:
             if slot_str in get_free_slots(target_date, duration_minutes, c):
                 assigned, cid = name, c
                 break
-        if cid is None:  # nadie libre: usar el primero (caso límite)
-            assigned, cid = cals[0]
+        if cid is None:
+            union = get_free_slots_multi(target_date, duration_minutes)
+            raise ValueError(
+                f"La hora {slot_str} ya no está disponible con ningún profesional. "
+                f"Huecos libres ese día: {', '.join(union) if union else 'ninguno'}."
+            )
 
     event = create_appointment(
-        client_name, client_phone, service, target_date, start_time, duration_minutes, cid
+        client_name, client_phone, service, target_date, start_time,
+        duration_minutes, cid, reason,
     )
     return event, assigned
 
 
 def list_client_appointments_multi(client_phone: str) -> list[dict]:
-    """Lista las citas del cliente en TODOS los calendarios (con el barbero)."""
+    """Lista las citas del paciente en TODOS los calendarios (con el profesional)."""
     out = []
     for name, cid in _all_calendars():
         for a in list_client_appointments(client_phone, cid):
-            a["barbero"] = name
+            a["profesional"] = name
             out.append(a)
     return out
 

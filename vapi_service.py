@@ -3,12 +3,15 @@ from zoneinfo import ZoneInfo
 import calendar_service
 from business_config import (
     APPOINTMENT_DURATION_MIN as APPOINTMENT_DURATION,
+    BUSINESS_HOURS,
     HAS_SERVICES,
     duration_for_service,
-    MULTI_BARBER,
+    MULTI_PROFESSIONAL,
 )
 
 TIMEZONE = ZoneInfo("Europe/Madrid")
+
+_DAY_NAMES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 
 def _parse_vapi_datetime(dt_str: str) -> tuple[date, time]:
@@ -18,10 +21,18 @@ def _parse_vapi_datetime(dt_str: str) -> tuple[date, time]:
 
 
 def _duration(service_type: str) -> int:
-    """Duración según el servicio (si el negocio los distingue) o la duración por defecto."""
+    """Duración según el servicio (si la clínica los distingue) o la duración por defecto."""
     if HAS_SERVICES and service_type:
         return duration_for_service(service_type)
     return APPOINTMENT_DURATION
+
+
+def _professional_arg(args: dict) -> str | None:
+    """Lee el profesional del payload de VAPI ('professional', con fallback al antiguo 'barber')."""
+    if not MULTI_PROFESSIONAL:
+        return None
+    value = (args.get("professional") or args.get("barber") or "").strip()
+    return value or None
 
 
 def handle_check_availability(args: dict) -> str:
@@ -34,13 +45,15 @@ def handle_check_availability(args: dict) -> str:
         target_date, req_time = _parse_vapi_datetime(preferred_dt)
 
         duration = _duration(args.get("serviceType", ""))
-        barber = args.get("barber", "").strip() if MULTI_BARBER else None
-        free_slots = calendar_service.get_free_slots_multi(target_date, duration, barber or None)
+        professional = _professional_arg(args)
+        free_slots = calendar_service.get_free_slots_multi(target_date, duration, professional)
 
         if not free_slots:
-            day_name = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][target_date.weekday()]
-            if target_date.weekday() >= 5:
-                return f"El {day_name} está cerrado. El salón abre de lunes a viernes de 14:00 a 20:00."
+            # El horario sale de la configuración de la clínica, no está hardcodeado:
+            # si ese día de la semana no tiene horario, está cerrado.
+            if BUSINESS_HOURS.get(target_date.weekday()) is None:
+                day_name = _DAY_NAMES[target_date.weekday()]
+                return f"El {day_name} la clínica está cerrada. ¿Te viene bien otro día?"
             return "Lo siento, ese día no hay huecos disponibles. ¿Te viene bien otro día?"
 
         slots_text = ", ".join(free_slots)
@@ -58,7 +71,8 @@ def handle_book_appointment(args: dict) -> str:
         phone = args.get("phone", "").strip()
         service_type = args.get("serviceType", "").strip()
         preferred_dt = args.get("preferredDateTime", "")
-        barber = args.get("barber", "").strip() if MULTI_BARBER else None
+        professional = _professional_arg(args)
+        reason = (args.get("reason") or args.get("motivo") or "").strip()
 
         target_date, start_time = _parse_vapi_datetime(preferred_dt)
 
@@ -72,17 +86,21 @@ def handle_book_appointment(args: dict) -> str:
             target_date=target_date,
             start_time=start_time,
             duration_minutes=duration,
-            barber_name=barber or None,
+            professional_name=professional,
+            reason=reason,
         )
 
         dt = datetime.fromisoformat(event["start"]).astimezone(TIMEZONE)
-        con_barbero = f" con {assigned}" if (MULTI_BARBER and assigned) else ""
+        con_profesional = f" con {assigned}" if (MULTI_PROFESSIONAL and assigned) else ""
         return (
             f"Cita confirmada. "
-            f"{service_label} para {name}{con_barbero} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
+            f"{service_label} para {name}{con_profesional} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
             f"Teléfono registrado: {phone}."
         )
 
+    except ValueError as e:
+        # Hueco ya ocupado: el asistente de voz ofrece las alternativas.
+        return str(e)
     except Exception as e:
         import traceback
         print(f"ERROR vapi book_appointment: {traceback.format_exc()}")
