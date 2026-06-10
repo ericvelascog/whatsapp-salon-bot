@@ -12,8 +12,14 @@ TIMEZONE = "Europe/Madrid"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 # El horario de la clínica (BUSINESS_HOURS) se carga desde business_config.
-# Paso de la rejilla de huecos (cada cuánto empieza un hueco posible).
-SLOT_DURATION = timedelta(minutes=30)
+
+
+class SlotUnavailableError(ValueError):
+    """La hora pedida ya no está libre. Lleva los huecos libres para ofrecer alternativas."""
+
+    def __init__(self, message: str, free_slots: list[str]):
+        super().__init__(message)
+        self.free_slots = free_slots
 
 
 def _get_service():
@@ -78,11 +84,13 @@ def get_free_slots(target_date: date, duration_minutes: int = 45, calendar_id: s
     service_duration = timedelta(minutes=duration_minutes)
     free_slots = []
     slot = day_start
+    # Los inicios se alinean a la duración del servicio (sesión de 45' ->
+    # 14:00, 14:45, 15:30...): así no quedan huecos muertos entre citas.
     while slot + service_duration <= day_end:
         slot_end = slot + service_duration
         if not any(s < slot_end and e > slot for s, e in busy_ranges):
             free_slots.append(slot.strftime("%H:%M"))
-        slot += SLOT_DURATION
+        slot += service_duration
 
     return free_slots
 
@@ -202,17 +210,19 @@ def book(
         assigned = professional_name
         free = get_free_slots(target_date, duration_minutes, cid)
         if slot_str not in free:
-            raise ValueError(
+            raise SlotUnavailableError(
                 f"La hora {slot_str} ya no está disponible con {professional_name}. "
-                f"Huecos libres ese día: {', '.join(free) if free else 'ninguno'}."
+                f"Huecos libres ese día: {', '.join(free) if free else 'ninguno'}.",
+                free,
             )
     elif len(cals) == 1:
         assigned, cid = cals[0]
         free = get_free_slots(target_date, duration_minutes, cid)
         if slot_str not in free:
-            raise ValueError(
+            raise SlotUnavailableError(
                 f"La hora {slot_str} ya no está disponible. "
-                f"Huecos libres ese día: {', '.join(free) if free else 'ninguno'}."
+                f"Huecos libres ese día: {', '.join(free) if free else 'ninguno'}.",
+                free,
             )
     else:
         # Asignar al primer profesional libre a esa hora
@@ -223,9 +233,10 @@ def book(
                 break
         if cid is None:
             union = get_free_slots_multi(target_date, duration_minutes)
-            raise ValueError(
+            raise SlotUnavailableError(
                 f"La hora {slot_str} ya no está disponible con ningún profesional. "
-                f"Huecos libres ese día: {', '.join(union) if union else 'ninguno'}."
+                f"Huecos libres ese día: {', '.join(union) if union else 'ninguno'}.",
+                union,
             )
 
     event = create_appointment(

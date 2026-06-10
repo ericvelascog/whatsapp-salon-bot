@@ -14,7 +14,11 @@
     "sabado": "Cerrado",
     "domingo": "Cerrado"
   },
-  "servicios": [],
+  "servicios": [
+    { "nombre": "Primera visita", "precio": "50,00€", "duracion_min": 60, "descripcion": "Valoración inicial completa y primer tratamiento." },
+    { "nombre": "Sesión de fisioterapia", "precio": "40,00€", "duracion_min": 45, "descripcion": "Sesión de seguimiento con terapia manual y ejercicio terapéutico." },
+    { "nombre": "Osteopatía", "precio": "45,00€", "duracion_min": 60, "descripcion": "Tratamiento osteopático global." }
+  ],
   "politicas": {
     "cancelacion": "Las cancelaciones deben realizarse con al menos 24 horas de antelación para que otro paciente pueda aprovechar el hueco.",
     "retraso": "Si llegas con más de 15 minutos de retraso, puede que no podamos atenderte y debamos reprogramar tu sesión.",

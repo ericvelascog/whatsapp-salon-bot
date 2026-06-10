@@ -12,6 +12,61 @@ from business_config import (
 TIMEZONE = ZoneInfo("Europe/Madrid")
 
 _DAY_NAMES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MONTH_NAMES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+_HOUR_WORDS = {
+    1: "una", 2: "dos", 3: "tres", 4: "cuatro", 5: "cinco", 6: "seis",
+    7: "siete", 8: "ocho", 9: "nueve", 10: "diez", 11: "once", 12: "doce",
+}
+
+
+def _hour_word(h24: int) -> tuple[str, str]:
+    """Devuelve (hora con artículo, franja del día) para una hora 0-23."""
+    h12 = h24 % 12 or 12
+    article = "la" if h12 == 1 else "las"
+    if h24 < 12:
+        period = "de la mañana"
+    elif h24 == 12:
+        period = "del mediodía"
+    elif h24 < 21:
+        period = "de la tarde"
+    else:
+        period = "de la noche"
+    return f"{article} {_HOUR_WORDS[h12]}", period
+
+
+def _slot_to_speech(slot: str) -> tuple[str, str]:
+    """Convierte 'HH:MM' a hora hablada para TTS. Devuelve (texto, franja del día)."""
+    h, m = (int(x) for x in slot.split(":"))
+    if m == 45:
+        base, period = _hour_word((h + 1) % 24)
+        return f"{base} menos cuarto", period
+    base, period = _hour_word(h)
+    if m == 0:
+        return base, period
+    if m == 15:
+        return f"{base} y cuarto", period
+    if m == 30:
+        return f"{base} y media", period
+    return f"{base} y {m}", period
+
+
+def _slots_to_speech(slots: list[str], max_items: int = 10) -> str:
+    """Lista de huecos en formato hablado; la franja solo se dice cuando cambia."""
+    parts = []
+    last_period = None
+    for s in slots[:max_items]:
+        text, period = _slot_to_speech(s)
+        if period != last_period:
+            text = f"{text} {period}"
+            last_period = period
+        parts.append(text)
+    extra = len(slots) - max_items
+    if extra > 0:
+        parts.append(f"y {extra} horas más")
+    return ", ".join(parts)
 
 
 def _parse_vapi_datetime(dt_str: str) -> tuple[date, time]:
@@ -56,8 +111,13 @@ def handle_check_availability(args: dict) -> str:
                 return f"El {day_name} la clínica está cerrada. ¿Te viene bien otro día?"
             return "Lo siento, ese día no hay huecos disponibles. ¿Te viene bien otro día?"
 
-        slots_text = ", ".join(free_slots)
-        return f"Huecos disponibles: {slots_text}"
+        # Forma hablada para que el TTS no deletree "14:30"; las equivalencias
+        # exactas van aparte porque bookAppointment necesita el formato HH:MM.
+        return (
+            f"Huecos disponibles: {_slots_to_speech(free_slots)}. "
+            f"(Equivalencias exactas SOLO para las herramientas, no las digas: "
+            f"{', '.join(free_slots)}.)"
+        )
 
     except Exception as e:
         import traceback
@@ -92,15 +152,23 @@ def handle_book_appointment(args: dict) -> str:
 
         dt = datetime.fromisoformat(event["start"]).astimezone(TIMEZONE)
         con_profesional = f" con {assigned}" if (MULTI_PROFESSIONAL and assigned) else ""
+        hora_hablada, franja = _slot_to_speech(dt.strftime("%H:%M"))
+        fecha_hablada = f"el {_DAY_NAMES[dt.weekday()]} {dt.day} de {_MONTH_NAMES[dt.month - 1]}"
         return (
             f"Cita confirmada. "
-            f"{service_label} para {name}{con_profesional} el {dt.strftime('%d/%m/%Y')} a las {dt.strftime('%H:%M')}. "
+            f"{service_label} para {name}{con_profesional} {fecha_hablada} a {hora_hablada} {franja}. "
             f"Teléfono registrado: {phone}."
         )
 
-    except ValueError as e:
-        # Hueco ya ocupado: el asistente de voz ofrece las alternativas.
-        return str(e)
+    except calendar_service.SlotUnavailableError as e:
+        # Hueco ya ocupado: alternativas en formato hablado para el TTS.
+        if e.free_slots:
+            return (
+                f"Esa hora ya no está disponible. Huecos libres: {_slots_to_speech(e.free_slots)}. "
+                f"(Equivalencias exactas SOLO para las herramientas, no las digas: "
+                f"{', '.join(e.free_slots)}.)"
+            )
+        return "Esa hora ya no está disponible y no quedan huecos ese día. ¿Te viene bien otro día?"
     except Exception as e:
         import traceback
         print(f"ERROR vapi book_appointment: {traceback.format_exc()}")
